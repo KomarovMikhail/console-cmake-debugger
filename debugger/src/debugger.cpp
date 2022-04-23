@@ -13,9 +13,6 @@
 // boost
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
 
-// cmake debugger
-#include <shared_memory_state.h>
-
 
 namespace
 {

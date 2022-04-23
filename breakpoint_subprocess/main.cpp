@@ -6,9 +6,6 @@
 #include <boost/interprocess/sync/scoped_lock.hpp>
 #include <boost/interprocess/containers/string.hpp>
 
-// cmake debugger
-#include <shared_memory_state.h>
-
 
 namespace
 {
