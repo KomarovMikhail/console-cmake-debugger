@@ -38,6 +38,14 @@ constexpr char USER_INPUT_QUIT[] = "q";
 
 }
 
+using SharedMemoryObject = boost::interprocess::shared_memory_object;
+using ManagedSharedMemory = boost::interprocess::managed_shared_memory;
+template <typename T>
+using SharedAllocator = boost::interprocess::allocator<T, ManagedSharedMemory::segment_manager>;
+using SharedString = boost::interprocess::basic_string<char, std::char_traits<char>, SharedAllocator<char> >;
+using SharedMutex = boost::interprocess::interprocess_mutex;
+using SharedScopedLock = boost::interprocess::scoped_lock<SharedMutex>;
+
 namespace cmake_debugger
 {
 
@@ -46,33 +54,53 @@ Debugger::Debugger(std::string&& debuggerExePath, std::string&& cmakeExePath, st
     , m_cmakeExePath(std::move(cmakeExePath))
     , m_pathToRun(std::move(pathToRun))
 {
+}
+
+bool Debugger::init()
+{
+    bool success = true;
+
     std::filesystem::remove_all(m_pathToRun + DEBUGGER_WORKDIR);
     std::filesystem::create_directory(m_pathToRun + DEBUGGER_WORKDIR);
 
     // initialize shared memory
-    boost::interprocess::shared_memory_object::remove(SHARED_MEMORY_NAME);
-    m_pManagedSharedMemory = std::make_unique<boost::interprocess::managed_shared_memory>(
-        boost::interprocess::open_or_create,
-        SHARED_MEMORY_NAME,
-        SHARED_MEMORY_SIZE
-    );
+    SharedMemoryObject::remove(SHARED_MEMORY_NAME);
 
-    m_pManagedSharedMemory->construct<boost::interprocess::string>(SHARED_MEMORY_STATE_NAME)();
-    m_pManagedSharedMemory->construct<boost::interprocess::string>(SHARED_MEMORY_USER_INPUT_NAME)();
-    m_pManagedSharedMemory->construct<bool>(SHARED_MEMORY_NEED_TO_WAIT_FOR_INPUT_NAME)(false);
-    m_pManagedSharedMemory->construct<boost::interprocess::interprocess_mutex>(SHARED_MEMORY_MUTEX_NAME)();
+    try {
+        m_pManagedSharedMemory = std::make_unique<ManagedSharedMemory>(
+                boost::interprocess::open_or_create,
+                SHARED_MEMORY_NAME,
+                SHARED_MEMORY_SIZE
+        );
+
+        m_pManagedSharedMemory->construct<SharedString>(SHARED_MEMORY_STATE_NAME)(
+            m_pManagedSharedMemory->get_segment_manager()
+        );
+        m_pManagedSharedMemory->construct<SharedString>(SHARED_MEMORY_USER_INPUT_NAME)(
+            m_pManagedSharedMemory->get_segment_manager()
+        );
+        m_pManagedSharedMemory->construct<bool>(SHARED_MEMORY_NEED_TO_WAIT_FOR_INPUT_NAME)(false);
+        m_pManagedSharedMemory->construct<SharedMutex>(SHARED_MEMORY_MUTEX_NAME)();
+    }
+    catch (const boost::interprocess::interprocess_exception& exception)
+    {
+        std::cout << "Failed to construct shared memory" << std::endl;
+        success = false;
+    }
+
+    return success;
 }
 
 Debugger::~Debugger()
 {
     std::filesystem::remove_all(m_pathToRun + DEBUGGER_WORKDIR);
 
-    m_pManagedSharedMemory->destroy<boost::interprocess::string>(SHARED_MEMORY_STATE_NAME);
-    m_pManagedSharedMemory->destroy<boost::interprocess::string>(SHARED_MEMORY_USER_INPUT_NAME);
+    m_pManagedSharedMemory->destroy<SharedString>(SHARED_MEMORY_STATE_NAME);
+    m_pManagedSharedMemory->destroy<SharedString>(SHARED_MEMORY_USER_INPUT_NAME);
     m_pManagedSharedMemory->destroy<bool>(SHARED_MEMORY_NEED_TO_WAIT_FOR_INPUT_NAME);
-    m_pManagedSharedMemory->destroy<boost::interprocess::interprocess_mutex>(SHARED_MEMORY_MUTEX_NAME);
+    m_pManagedSharedMemory->destroy<SharedMutex>(SHARED_MEMORY_MUTEX_NAME);
 
-    boost::interprocess::shared_memory_object::remove(SHARED_MEMORY_NAME);
+    SharedMemoryObject::remove(SHARED_MEMORY_NAME);
 }
 void Debugger::run()
 {
@@ -82,8 +110,7 @@ void Debugger::run()
 
     std::cout << "Start debugging" << std::endl;
 
-
-    auto pMutex = m_pManagedSharedMemory->find<boost::interprocess::interprocess_mutex>(SHARED_MEMORY_MUTEX_NAME).first;
+    auto pMutex = m_pManagedSharedMemory->find<SharedMutex>(SHARED_MEMORY_MUTEX_NAME).first;
     if (pMutex == nullptr)
     {
         std::cout << "Couldn't find mutex in shared memory" << std::endl;
@@ -97,8 +124,10 @@ void Debugger::run()
         {
             std::cout << "Cmake finished with status code " << code << std::endl << "Last state:" << std::endl;
 
-            boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex> scopedLock(*pMutex);
-            auto pState = m_pManagedSharedMemory->find<boost::interprocess::string>(SHARED_MEMORY_STATE_NAME).first;
+            SharedScopedLock scopedLock(*pMutex);
+            auto pState = m_pManagedSharedMemory->find<SharedString>(SHARED_MEMORY_STATE_NAME).first;
+            auto size = m_pManagedSharedMemory->find<SharedString>(SHARED_MEMORY_STATE_NAME).second;
+            std::cout << "Size: " << size << std::endl;
             if (pState == nullptr)
             {
                 std::cout << "Couldn't find state in shared memory" << std::endl;
@@ -115,8 +144,8 @@ void Debugger::run()
         std::string userInput;
         std::cin >> userInput;
 
-        boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex> scopedLock(*pMutex);
-        auto pUserInput = m_pManagedSharedMemory->find<boost::interprocess::string>(SHARED_MEMORY_USER_INPUT_NAME).first;
+        SharedScopedLock scopedLock(*pMutex);
+        auto pUserInput = m_pManagedSharedMemory->find<SharedString>(SHARED_MEMORY_USER_INPUT_NAME).first;
         if (pUserInput == nullptr)
         {
             std::cout << "Couldn't find user input in shared memory" << std::endl;

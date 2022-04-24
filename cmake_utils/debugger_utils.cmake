@@ -8,7 +8,7 @@ function(debugger_breakpoint_met IS_BREAKPOINT)
     execute_process(
         COMMAND
         /home/mikhail/CLionProjects/cmake-debugger/cmake-build-debug/breakpoint_subprocess/breakpoint_subprocess
-        state #"${DEBUGGER_STATE}"
+        "${DEBUGGER_STATE}"
         ${IS_BREAKPOINT}
     )
 endfunction()

@@ -23,6 +23,13 @@ constexpr char USER_INPUT_STEP[] = "s";
 
 }
 
+using ManagedSharedMemory = boost::interprocess::managed_shared_memory;
+template <typename T>
+using SharedAllocator = boost::interprocess::allocator<T, ManagedSharedMemory::segment_manager>;
+using SharedString = boost::interprocess::basic_string<char, std::char_traits<char>, SharedAllocator<char> >;
+using SharedMutex = boost::interprocess::interprocess_mutex;
+using SharedScopedLock = boost::interprocess::scoped_lock<SharedMutex>;
+
 
 int main(int argc, char *argv[])
 {
@@ -34,6 +41,8 @@ int main(int argc, char *argv[])
     std::string state(argv[1]);
     state = std::regex_replace(state, std::regex("\\|"), "\n");
 
+    std::cout << state.size() << std::endl;
+
     bool isBreakpoint = false;
     if (argc == 3 && std::string(argv[2]) == "breakpoint")
     {
@@ -44,10 +53,10 @@ int main(int argc, char *argv[])
                   << "Type 's' to make step" << std::endl;
     }
 
-    std::unique_ptr<boost::interprocess::managed_shared_memory> pManagedSharedMemory;
+    std::unique_ptr<ManagedSharedMemory> pManagedSharedMemory;
     try
     {
-        pManagedSharedMemory = std::make_unique<boost::interprocess::managed_shared_memory>(
+        pManagedSharedMemory = std::make_unique<ManagedSharedMemory>(
                 boost::interprocess::open_only,
                 SHARED_MEMORY_NAME
         );
@@ -58,10 +67,10 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    auto pState = pManagedSharedMemory->find<boost::interprocess::string>(SHARED_MEMORY_STATE_NAME).first;
-    auto pUserInput = pManagedSharedMemory->find<boost::interprocess::string>(SHARED_MEMORY_USER_INPUT_NAME).first;
+    auto pState = pManagedSharedMemory->find<SharedString>(SHARED_MEMORY_STATE_NAME).first;
+    auto pUserInput = pManagedSharedMemory->find<SharedString>(SHARED_MEMORY_USER_INPUT_NAME).first;
     auto pNeedToWaitForInput = pManagedSharedMemory->find<bool>(SHARED_MEMORY_NEED_TO_WAIT_FOR_INPUT_NAME).first;
-    auto pMutex = pManagedSharedMemory->find<boost::interprocess::interprocess_mutex>(SHARED_MEMORY_MUTEX_NAME).first;
+    auto pMutex = pManagedSharedMemory->find<SharedMutex>(SHARED_MEMORY_MUTEX_NAME).first;
     bool needToWaitForInput = false;
 
     if (pState == nullptr || pUserInput == nullptr || pNeedToWaitForInput == nullptr || pMutex == nullptr)
@@ -72,14 +81,14 @@ int main(int argc, char *argv[])
 
     // set state
     {
-        boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex> scopedLock(*pMutex);
+        SharedScopedLock scopedLock(*pMutex);
         pState->assign(state);
         needToWaitForInput = isBreakpoint ? true : *pNeedToWaitForInput;
     }
 
     while (needToWaitForInput)
     {
-        boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex> scopedLock(*pMutex);
+        SharedScopedLock scopedLock(*pMutex);
         if (!pUserInput->empty())
         {
             auto userInput = *pUserInput;

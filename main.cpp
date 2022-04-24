@@ -35,7 +35,10 @@ int main(int argc, char *argv[])
     }
 
     cmake_debugger::Debugger debugger(std::move(debuggerExePath), std::move(cmakeExePath), std::move(pathToRun));
-    debugger.run();
+    if (debugger.init())
+    {
+        debugger.run();
+    }
 
     return 0;
 }
