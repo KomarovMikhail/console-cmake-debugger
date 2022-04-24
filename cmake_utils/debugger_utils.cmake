@@ -5,10 +5,5 @@ function(debugger_breakpoint_met IS_BREAKPOINT)
     foreach (VARIABLE_NAME ${VARIABLE_NAMES})
         string(APPEND DEBUGGER_STATE "${VARIABLE_NAME}=${${VARIABLE_NAME}}|")
     endforeach()
-    execute_process(
-        COMMAND
-        /home/mikhail/CLionProjects/cmake-debugger/cmake-build-debug/breakpoint_subprocess/breakpoint_subprocess
-        "${DEBUGGER_STATE}"
-        ${IS_BREAKPOINT}
-    )
+    execute_process(COMMAND ${DEBUGGER_SUBPROCESS_PATH} "${DEBUGGER_STATE}" ${IS_BREAKPOINT})
 endfunction()

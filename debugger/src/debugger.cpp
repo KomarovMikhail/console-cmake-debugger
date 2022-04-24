@@ -12,6 +12,7 @@
 
 // boost
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
+#include <boost/interprocess/containers/string.hpp>
 
 
 namespace
@@ -31,6 +32,7 @@ constexpr char CMAKE_UTILS_INCLUDE[] = "include(${CMAKE_SOURCE_DIR}/debugger_uti
 constexpr char BREAKPOINT_FUNCTION_CALL[] = "debugger_breakpoint_met(\"breakpoint\")";
 
 constexpr char DEBUGGER_CMAKE_UTILS_PATH[] = "cmake_utils/debugger_utils.cmake";
+constexpr char DEBUGGER_SUBPROCESS_PATH[] = "debugger_subprocess/debugger_subprocess";
 
 constexpr int SHARED_MEMORY_SIZE = 1048576; // 1Mb;
 
@@ -119,15 +121,15 @@ void Debugger::run()
 
     auto future = std::async(std::launch::async, [this, pMutex]() -> int
     {
-        const int code = std::system((m_cmakeExePath + " " + m_pathToRun + DEBUGGER_WORKDIR + " -B build").c_str());
+        auto command = m_cmakeExePath + " " + m_pathToRun + DEBUGGER_WORKDIR + " -B build -DDEBUGGER_SUBPROCESS_PATH=" +
+            m_debuggerExePath + DEBUGGER_SUBPROCESS_PATH;
+        const int code = std::system(command.c_str());
         if (code != 0)
         {
             std::cout << "Cmake finished with status code " << code << std::endl << "Last state:" << std::endl;
 
             SharedScopedLock scopedLock(*pMutex);
             auto pState = m_pManagedSharedMemory->find<SharedString>(SHARED_MEMORY_STATE_NAME).first;
-            auto size = m_pManagedSharedMemory->find<SharedString>(SHARED_MEMORY_STATE_NAME).second;
-            std::cout << "Size: " << size << std::endl;
             if (pState == nullptr)
             {
                 std::cout << "Couldn't find state in shared memory" << std::endl;

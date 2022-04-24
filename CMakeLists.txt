@@ -6,9 +6,11 @@ set(CMAKE_CXX_STANDARD 17)
 
 add_subdirectory(debugger)
 add_subdirectory(initialization_file_parser)
-add_subdirectory(breakpoint_subprocess)
+add_subdirectory(debugger_subprocess)
 
 add_executable(cmake_debugger main.cpp)
+
+add_dependencies(cmake_debugger debugger_subprocess)
 
 file(COPY config/config.ini DESTINATION config)
 file(COPY cmake_utils/debugger_utils.cmake DESTINATION cmake_utils)
