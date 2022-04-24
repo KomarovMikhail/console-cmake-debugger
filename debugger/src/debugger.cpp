@@ -8,7 +8,7 @@
 #include <fstream>
 #include <algorithm>
 #include <regex>
-#include <thread>
+#include <future>
 
 // boost
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
@@ -19,7 +19,7 @@ namespace
 
 constexpr char CMAKE_FILE_NAME[] = "CMakeLists.txt";
 constexpr char BREAKPOINT_LABEL[] = "set\\(DEBUGGER_BREAKPOINT ON\\)";
-constexpr char DEBUGGER_WORKDIR[] = "workdir";
+constexpr char DEBUGGER_WORKDIR[] = "/workdir";
 
 constexpr char SHARED_MEMORY_NAME[] = "cmake_debugger_shared_memory";
 constexpr char SHARED_MEMORY_STATE_NAME[] = "shared_memory_state";
@@ -27,22 +27,27 @@ constexpr char SHARED_MEMORY_USER_INPUT_NAME[] = "shared_memory_user_input";
 constexpr char SHARED_MEMORY_NEED_TO_WAIT_FOR_INPUT_NAME[] = "shared_memory_need_to_wait_fro_input";
 constexpr char SHARED_MEMORY_MUTEX_NAME[] = "interprocess_mutex";
 
-constexpr char CMAKE_UTILS_INCLUDE[] = "include(/home/mikhail/CLionProjects/cmake-debugger/cmake-build-debug/cmake_utils/debugger_utils.cmake)\n";
-constexpr char BREAKPOINT_FUNCTION_CALL[] = "debugger_breakpoint_met()";
+constexpr char CMAKE_UTILS_INCLUDE[] = "include(${CMAKE_SOURCE_DIR}/debugger_utils.cmake)\n";
+constexpr char BREAKPOINT_FUNCTION_CALL[] = "debugger_breakpoint_met(\"breakpoint\")";
 
-constexpr int SHARED_MEMORY_SIZE = 65536;
+constexpr char DEBUGGER_CMAKE_UTILS_PATH[] = "cmake_utils/debugger_utils.cmake";
+
+constexpr int SHARED_MEMORY_SIZE = 1048576; // 1Mb;
+
+constexpr char USER_INPUT_QUIT[] = "q";
 
 }
 
 namespace cmake_debugger
 {
 
-Debugger::Debugger(std::string&& cmakeExePath, std::string&& pathToRun)
-    : m_cmakeExePath(std::move(cmakeExePath))
+Debugger::Debugger(std::string&& debuggerExePath, std::string&& cmakeExePath, std::string&& pathToRun)
+    : m_debuggerExePath(std::move(debuggerExePath))
+    , m_cmakeExePath(std::move(cmakeExePath))
     , m_pathToRun(std::move(pathToRun))
 {
-    std::filesystem::remove_all(DEBUGGER_WORKDIR);
-    std::filesystem::create_directory(DEBUGGER_WORKDIR);
+    std::filesystem::remove_all(m_pathToRun + DEBUGGER_WORKDIR);
+    std::filesystem::create_directory(m_pathToRun + DEBUGGER_WORKDIR);
 
     // initialize shared memory
     boost::interprocess::shared_memory_object::remove(SHARED_MEMORY_NAME);
@@ -52,20 +57,20 @@ Debugger::Debugger(std::string&& cmakeExePath, std::string&& pathToRun)
         SHARED_MEMORY_SIZE
     );
 
-    m_pState = m_pManagedSharedMemory->construct<boost::interprocess::string>(SHARED_MEMORY_STATE_NAME)();
-    m_pUserInput = m_pManagedSharedMemory->construct<boost::interprocess::string>(SHARED_MEMORY_USER_INPUT_NAME)();
-    m_pNeedToWaitForInput = m_pManagedSharedMemory->construct<bool>(SHARED_MEMORY_NEED_TO_WAIT_FOR_INPUT_NAME)(true);
-    m_pMutex = m_pManagedSharedMemory->construct<boost::interprocess::interprocess_mutex>(SHARED_MEMORY_MUTEX_NAME)();
+    m_pManagedSharedMemory->construct<boost::interprocess::string>(SHARED_MEMORY_STATE_NAME)();
+    m_pManagedSharedMemory->construct<boost::interprocess::string>(SHARED_MEMORY_USER_INPUT_NAME)();
+    m_pManagedSharedMemory->construct<bool>(SHARED_MEMORY_NEED_TO_WAIT_FOR_INPUT_NAME)(false);
+    m_pManagedSharedMemory->construct<boost::interprocess::interprocess_mutex>(SHARED_MEMORY_MUTEX_NAME)();
 }
 
 Debugger::~Debugger()
 {
-    std::filesystem::remove_all(DEBUGGER_WORKDIR);
+    std::filesystem::remove_all(m_pathToRun + DEBUGGER_WORKDIR);
 
-    m_pManagedSharedMemory->destroy_ptr(m_pState);
-    m_pManagedSharedMemory->destroy_ptr(m_pUserInput);
-    m_pManagedSharedMemory->destroy_ptr(m_pNeedToWaitForInput);
-    m_pManagedSharedMemory->destroy_ptr(m_pMutex);
+    m_pManagedSharedMemory->destroy<boost::interprocess::string>(SHARED_MEMORY_STATE_NAME);
+    m_pManagedSharedMemory->destroy<boost::interprocess::string>(SHARED_MEMORY_USER_INPUT_NAME);
+    m_pManagedSharedMemory->destroy<bool>(SHARED_MEMORY_NEED_TO_WAIT_FOR_INPUT_NAME);
+    m_pManagedSharedMemory->destroy<boost::interprocess::interprocess_mutex>(SHARED_MEMORY_MUTEX_NAME);
 
     boost::interprocess::shared_memory_object::remove(SHARED_MEMORY_NAME);
 }
@@ -75,10 +80,34 @@ void Debugger::run()
 
     preprocessFiles();
 
-    std::thread cmakeThread([this]()
+    std::cout << "Start debugging" << std::endl;
+
+
+    auto pMutex = m_pManagedSharedMemory->find<boost::interprocess::interprocess_mutex>(SHARED_MEMORY_MUTEX_NAME).first;
+    if (pMutex == nullptr)
     {
-        std::system((m_cmakeExePath + " " + DEBUGGER_WORKDIR + " -B build").c_str());
+        std::cout << "Couldn't find mutex in shared memory" << std::endl;
+        return;
+    }
+
+    auto future = std::async(std::launch::async, [this, pMutex]() -> int
+    {
+        const int code = std::system((m_cmakeExePath + " " + m_pathToRun + DEBUGGER_WORKDIR + " -B build").c_str());
+        if (code != 0)
+        {
+            std::cout << "Cmake finished with status code " << code << std::endl << "Last state:" << std::endl;
+
+            boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex> scopedLock(*pMutex);
+            auto pState = m_pManagedSharedMemory->find<boost::interprocess::string>(SHARED_MEMORY_STATE_NAME).first;
+            if (pState == nullptr)
+            {
+                std::cout << "Couldn't find state in shared memory" << std::endl;
+            }
+
+            std::cout << *pState << std::endl;
+        }
         std::cout << "Debugging complete. Type 'q' to exit" << std::endl;
+        return code;
     });
 
     while (true)
@@ -86,26 +115,37 @@ void Debugger::run()
         std::string userInput;
         std::cin >> userInput;
 
-        boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex> scopedLock(*m_pMutex);
-        m_pUserInput->assign(userInput);
+        boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex> scopedLock(*pMutex);
+        auto pUserInput = m_pManagedSharedMemory->find<boost::interprocess::string>(SHARED_MEMORY_USER_INPUT_NAME).first;
+        if (pUserInput == nullptr)
+        {
+            std::cout << "Couldn't find user input in shared memory" << std::endl;
+            break;
+        }
+        pUserInput->assign(userInput);
 
-        if (userInput == "q")
+        auto futureStatus = future.wait_for(std::chrono::milliseconds(0));
+        if (futureStatus == std::future_status::ready && userInput == USER_INPUT_QUIT)
         {
             break;
         }
     }
 
-    cmakeThread.join();
+    future.wait();
 }
 
 void Debugger::preprocessFiles()
 {
+    std::cout << "Preparing to start debugging" << std::endl;
     // copying all project files
-    std::filesystem::copy(m_pathToRun, DEBUGGER_WORKDIR, std::filesystem::copy_options::recursive);
+    std::filesystem::copy(m_pathToRun, m_pathToRun + DEBUGGER_WORKDIR, std::filesystem::copy_options::recursive);
+
+    // copy cmake utils
+    std::filesystem::copy(m_debuggerExePath + DEBUGGER_CMAKE_UTILS_PATH, m_pathToRun + DEBUGGER_WORKDIR);
 
     // dfs on project files
     std::stack<std::string> unprocessedDirs;
-    unprocessedDirs.push(DEBUGGER_WORKDIR);
+    unprocessedDirs.push(m_pathToRun + DEBUGGER_WORKDIR);
 
     while (!unprocessedDirs.empty())
     {

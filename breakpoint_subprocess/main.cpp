@@ -6,6 +6,8 @@
 #include <boost/interprocess/sync/scoped_lock.hpp>
 #include <boost/interprocess/containers/string.hpp>
 
+#include <regex>
+
 
 namespace
 {
@@ -24,13 +26,23 @@ constexpr char USER_INPUT_STEP[] = "s";
 
 int main(int argc, char *argv[])
 {
-    std::cout << "Breakpoint met" << std::endl;
     if (argc < 2)
     {
         std::cout << "Need to specify at least 1 argument" << std::endl;
         return 1;
     }
     std::string state(argv[1]);
+    state = std::regex_replace(state, std::regex("\\|"), "\n");
+
+    bool isBreakpoint = false;
+    if (argc == 3 && std::string(argv[2]) == "breakpoint")
+    {
+        std::cout << "Breakpoint met" << std::endl;
+        isBreakpoint = true;
+
+        std::cout << "Current state:\n" << state << std::endl<< "Type 'c' to continue" << std::endl
+                  << "Type 's' to make step" << std::endl;
+    }
 
     std::unique_ptr<boost::interprocess::managed_shared_memory> pManagedSharedMemory;
     try
@@ -62,28 +74,28 @@ int main(int argc, char *argv[])
     {
         boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex> scopedLock(*pMutex);
         pState->assign(state);
-        needToWaitForInput = *pNeedToWaitForInput;
+        needToWaitForInput = isBreakpoint ? true : *pNeedToWaitForInput;
     }
-
-    std::cout << "Current state:\n" << state << std::endl<< "Type 'c' to continue" << std::endl
-        << "Type 's' to make step" << std::endl;
 
     while (needToWaitForInput)
     {
         boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex> scopedLock(*pMutex);
         if (!pUserInput->empty())
         {
+            auto userInput = *pUserInput;
             pUserInput->assign(std::string());
-            if (*pUserInput == USER_INPUT_CONTINUE)
+            if (userInput == USER_INPUT_CONTINUE)
             {
                 *pNeedToWaitForInput = false;
+                break;
             }
-            else if (*pUserInput == USER_INPUT_STEP)
+            else if (userInput == USER_INPUT_STEP)
             {
                 *pNeedToWaitForInput = true;
+                break;
             }
 
-            break;
+            std::cout << "Unknown command" << std::endl;
         }
     }
 

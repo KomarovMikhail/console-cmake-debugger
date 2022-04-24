@@ -15,8 +15,8 @@ file(COPY cmake_utils/debugger_utils.cmake DESTINATION cmake_utils)
 
 target_link_libraries(debugger ${Boost_LIBRARIES} -lrt)
 
-target_link_libraries(${PROJECT_NAME} PUBLIC debugger)
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/debugger/include)
+target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC debugger)
+target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/debugger/include)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC initialization_file_parser)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/initialization_file_parser/include)

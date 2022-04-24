@@ -9,9 +9,9 @@
 namespace cmake_debugger
 {
 
-InitializationFileParser::InitializationFileParser(const std::string& filePath, const std::string& sectionName)
-    : m_filePath(filePath)
-    , m_sectionName(sectionName)
+InitializationFileParser::InitializationFileParser(std::string&& filePath, std::string&& sectionName)
+    : m_filePath(std::move(filePath))
+    , m_sectionName(std::move(sectionName))
 {
 }
 

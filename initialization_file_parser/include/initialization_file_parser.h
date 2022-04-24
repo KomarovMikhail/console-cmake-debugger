@@ -9,7 +9,7 @@ namespace cmake_debugger
 class InitializationFileParser
 {
 public:
-    InitializationFileParser(const std::string& filePath, const std::string& sectionName);
+    InitializationFileParser(std::string&& filePath, std::string&& sectionName);
 
     bool parse();
     std::string getProperty(const std::string& propertyName);
