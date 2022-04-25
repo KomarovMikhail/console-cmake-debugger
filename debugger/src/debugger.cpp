@@ -29,7 +29,8 @@ constexpr char SHARED_MEMORY_NEED_TO_WAIT_FOR_INPUT_NAME[] = "shared_memory_need
 constexpr char SHARED_MEMORY_MUTEX_NAME[] = "interprocess_mutex";
 
 constexpr char CMAKE_UTILS_INCLUDE[] = "include(${CMAKE_SOURCE_DIR}/debugger_utils.cmake)\n";
-constexpr char BREAKPOINT_FUNCTION_CALL[] = "debugger_breakpoint_met(\"breakpoint\")";
+constexpr char RUN_DEBUGGER_SUBPROCESS_CALL[] = ")\nrun_debugger_subprocess(\"\")";
+constexpr char RUN_DEBUGGER_SUBPROCESS_BREAKPOINT_CALL[] = "run_debugger_subprocess(\"breakpoint\")";
 
 constexpr char DEBUGGER_CMAKE_UTILS_PATH[] = "cmake_utils/debugger_utils.cmake";
 constexpr char DEBUGGER_SUBPROCESS_PATH[] = "debugger_subprocess/debugger_subprocess";
@@ -207,7 +208,8 @@ void Debugger::preprocessCmakeFile(const std::string& filePath)
         istream.close();
     }
 
-    auto fileContent = std::regex_replace(buffer.str(), std::regex(BREAKPOINT_LABEL), BREAKPOINT_FUNCTION_CALL);
+    auto fileContent = std::regex_replace(buffer.str(), std::regex(BREAKPOINT_LABEL), RUN_DEBUGGER_SUBPROCESS_BREAKPOINT_CALL);
+    fileContent = std::regex_replace(fileContent, std::regex("\\)\\n"), RUN_DEBUGGER_SUBPROCESS_CALL);
     fileContent = CMAKE_UTILS_INCLUDE + fileContent;
 
     {

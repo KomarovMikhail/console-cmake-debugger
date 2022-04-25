@@ -15,6 +15,11 @@ public:
     Debugger(std::string&& debuggerExePath, std::string&& cmakeExePath, std::string&& pathToRun);
     ~Debugger();
 
+    Debugger(const Debugger&) = delete;
+    Debugger(Debugger&&) = delete;
+    Debugger& operator=(const Debugger&) = delete;
+    Debugger& operator=(Debugger&&) = delete;
+
     bool init();
     void run();
 

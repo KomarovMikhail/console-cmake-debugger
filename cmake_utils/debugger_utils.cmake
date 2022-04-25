@@ -1,4 +1,4 @@
-function(debugger_breakpoint_met IS_BREAKPOINT)
+function(run_debugger_subprocess IS_BREAKPOINT)
     get_cmake_property(VARIABLE_NAMES VARIABLES)
     list(SORT VARIABLE_NAMES)
     set(DEBUGGER_STATE "")

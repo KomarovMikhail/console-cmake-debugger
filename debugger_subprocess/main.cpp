@@ -41,16 +41,11 @@ int main(int argc, char *argv[])
     std::string state(argv[1]);
     state = std::regex_replace(state, std::regex("\\|"), "\n");
 
-    std::cout << state.size() << std::endl;
-
     bool isBreakpoint = false;
     if (argc == 3 && std::string(argv[2]) == "breakpoint")
     {
         std::cout << "Breakpoint met" << std::endl;
         isBreakpoint = true;
-
-        std::cout << "Current state:\n" << state << std::endl<< "Type 'c' to continue" << std::endl
-                  << "Type 's' to make step" << std::endl;
     }
 
     std::unique_ptr<ManagedSharedMemory> pManagedSharedMemory;
@@ -83,7 +78,13 @@ int main(int argc, char *argv[])
     {
         SharedScopedLock scopedLock(*pMutex);
         pState->assign(state);
-        needToWaitForInput = isBreakpoint ? true : *pNeedToWaitForInput;
+        needToWaitForInput = isBreakpoint || *pNeedToWaitForInput;
+    }
+
+    if (needToWaitForInput)
+    {
+        std::cout << "Current state:\n" << state << std::endl<< "Type 'c' to continue" << std::endl
+                  << "Type 's' to make step" << std::endl;
     }
 
     while (needToWaitForInput)
